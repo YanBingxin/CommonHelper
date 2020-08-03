@@ -1,0 +1,135 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+
+namespace NV.Infrastructure.UICommon
+{
+   public class PrintCtrl
+    {
+        //A4纸的尺寸300dpi 的图像的像素是2480×3508
+        private const int A4_WIDTH_PIXEL = 2480;
+        private const int A4_HEIGTH_PIXEL = 3580;
+
+        // 图片 和 界面 dpi比率
+        // 通常图片都是300 dpi  而是界面96 dpi（dpi dot per inch）
+        private readonly double IMAGE_DPI_SCALE = 300.0 / 96.0;
+
+        //标准打印使用 300dpi
+        private readonly double PRINT_DPI_X = 300;
+        private readonly double PRINT_DPI_Y = 300;
+
+        private PrintDialog _printer = null;
+
+        public PrintCtrl()
+        {
+            InitPrinter();
+        }
+
+        private void InitPrinter()
+        {
+            _printer = new PrintDialog();
+            //灰度打印
+            _printer.PrintTicket.OutputColor = System.Printing.OutputColor.Grayscale;
+        }
+
+        /// <summary>
+        /// print
+        /// </summary>
+        /// <param name="control"></param>
+        /// <returns></returns>
+        public bool Print(FrameworkElement control, bool isShowDia)
+        {
+            if (null == control || null == _printer)
+            {
+                return false;
+            }
+
+            try
+            {
+                if (isShowDia)
+                    _printer.ShowDialog();
+                //截图
+                var bitmapSrc = CaptureControlScreen(control);
+                //图片放在文档里
+                var fixedDoc = GenerateDocument(bitmapSrc);
+                //打印
+                _printer.PrintDocument(fixedDoc.DocumentPaginator, "print reprot");
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// control to BitmapSource
+        /// https://blogs.msdn.microsoft.com/jaimer/2009/07/03/rendertargetbitmap-tips/
+        /// </summary>
+        /// <param name="control"></param>
+        /// <returns></returns>
+        private BitmapSource CaptureControlScreen(Visual control)
+        {
+            var bounds = VisualTreeHelper.GetDescendantBounds(control);
+
+            var rtb = new RenderTargetBitmap((int)(bounds.Width * IMAGE_DPI_SCALE),
+                                                  (int)(bounds.Height * IMAGE_DPI_SCALE),
+                                                   PRINT_DPI_X, PRINT_DPI_Y,
+                                                   PixelFormats.Pbgra32);
+
+            var dv = new DrawingVisual();
+            using (DrawingContext ctx = dv.RenderOpen())
+            {
+                VisualBrush vb = new VisualBrush(control);
+                ctx.DrawRectangle(vb, null, new Rect(new Point(), bounds.Size));
+            }
+            rtb.Render(dv);
+            return rtb;
+        }
+
+        /// <summary>
+        /// document
+        /// </summary>
+        /// <param name="bmpSource"></param>
+        /// <returns></returns>
+        private FixedDocument GenerateDocument(BitmapSource bmpSource)
+        {
+            if (null == bmpSource)
+            {
+                return null;
+            }
+            var capabilities = _printer.PrintQueue.GetPrintCapabilities(_printer.PrintTicket);
+
+            //append bitmap to control of image
+            var image = new Image();
+            image.Source = bmpSource;
+            image.VerticalAlignment = VerticalAlignment.Top;
+            image.HorizontalAlignment = HorizontalAlignment.Center;
+            image.Width = capabilities.PageImageableArea.ExtentWidth;
+            image.Height = capabilities.PageImageableArea.ExtentHeight;
+
+            //append image to fixedpage
+            var printDocumentPage = new FixedPage();
+            printDocumentPage.Width = capabilities.PageImageableArea.ExtentWidth;
+            printDocumentPage.Height = capabilities.PageImageableArea.ExtentHeight;
+            printDocumentPage.HorizontalAlignment = HorizontalAlignment.Center;
+            printDocumentPage.Children.Add(image);
+
+            //append fixedpage to pagecontent
+            var pageContent = new PageContent();
+            pageContent.HorizontalAlignment = HorizontalAlignment.Center;
+            ((System.Windows.Markup.IAddChild)pageContent).AddChild(printDocumentPage);
+
+            //append pagecontent to document
+            var fixedDoc = new FixedDocument();
+            fixedDoc.Pages.Add(pageContent);
+            return fixedDoc;
+        }
+    }
+}
